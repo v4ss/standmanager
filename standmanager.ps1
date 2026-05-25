@@ -194,7 +194,7 @@ function Get-DefaultConfig {
     return [ordered]@{
         AVLogsPath      = 'C:\ProgramData\McAfee\Endpoint Security\Logs'
         HayabusaRelativePath = 'hayabusa-3.7.0-win-x86\hayabusa-3.7.0-win-x86.exe'
-        SaveDestination      = 'N:\DA\SOC\CD\ORG\DEV\GRP\DEVDME-ADMINSYST\Securite_Informatique\Espace_OSSI\SD6\$Suivi des PC\SI'
+        SaveDestination      = 'L:\RSSI\SI-ISOLES\LOGS'
         CompressionLevel     = 'Optimal'
         HayabusaProfile      = 'standard'
         EventLogs            = @('System','Application','Setup','Security')
