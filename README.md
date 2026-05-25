@@ -1,9 +1,8 @@
-![Logo outil StandManager](./standmanager.png)
-
+![Logo outil StandManager](./standmanager-logo.png)
 # StandManager
 
 Outil PowerShell de collecte forensique, de durcissement et de supervision SSI
-pour postes Windows isolés. Conçu pour être exécuté depuis une clé USB, sans dépendance Internet.
+pour **postes Windows isolés**. Conçu pour être exécuté **depuis une clé USB**, sans dépendance Internet.
 
 ## Capacités principales
 
