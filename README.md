@@ -1,3 +1,5 @@
+![Logo outil StandManager](./standmanager.png)
+
 # StandManager
 
 Outil PowerShell de collecte forensique, de durcissement et de supervision SSI
