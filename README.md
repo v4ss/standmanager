@@ -15,7 +15,7 @@ pour **postes Windows isolés**. Conçu pour être exécuté **depuis une clé U
   - export incrémental basé sur `last_export.txt` ;
   - empreinte SHA-256 par fichier ;
   - rapport texte horodaté + manifest CSV ;
-  - analyse optionnelle via Hayabusa (`csv-timeline`).
+  - analyse optionnelle via [Hayabusa](https://github.com/Yamato-Security/hayabusa/releases) (`csv-timeline`).
 - Copie récursive des logs Anti-virus.
 - Audit système : OS, pare-feu, BitLocker, antivirus, correctifs, membres
   Administrateurs, état de redémarrage en attente — sortie JSON + résumé texte.
@@ -33,7 +33,7 @@ pour **postes Windows isolés**. Conçu pour être exécuté **depuis une clé U
 - PowerShell 5.1 (préinstallé).
 - Privilèges administrateur pour : triage services, restauration services,
   export EVTX.
-- Hayabusa 3.x (optionnel) déposé à côté du script, chemin configurable.
+- [Hayabusa](https://github.com/Yamato-Security/hayabusa/releases) (optionnel) déposé à côté du script, chemin configurable.
 
 ## Installation
 
