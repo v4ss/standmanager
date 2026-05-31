@@ -1223,7 +1223,7 @@ function Get-PosteWeather {
     if ($High -ge 5)       { return [PSCustomObject]@{ Code='storm';    Icon=$iStorm;    Label='Orage';        Class='wx-storm';    Severity=5 } }
     if ($High -ge 1)       { return [PSCustomObject]@{ Code='rain';     Icon=$iRain;     Label='Pluie';        Class='wx-rain';     Severity=4 } }
     if ($Med  -ge 10)      { return [PSCustomObject]@{ Code='cloudy';   Icon=$iCloudy;   Label='Nuageux';      Class='wx-cloudy';   Severity=3 } }
-    if ($Med  -ge 1)       { return [PSCustomObject]@{ Code='partly';   Icon=$iPartly;   Label='eclaircies';   Class='wx-partly';   Severity=2 } }
+    if ($Med  -ge 1)       { return [PSCustomObject]@{ Code='partly';   Icon=$iPartly;   Label='Eclaircies';   Class='wx-partly';   Severity=2 } }
                              return [PSCustomObject]@{ Code='clear';    Icon=$iClear;    Label='Clair';        Class='wx-clear';    Severity=1 }
 }
  
