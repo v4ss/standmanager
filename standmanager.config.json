@@ -1,6 +1,6 @@
 {
-    "TrellixLogsPath":      "C:\\ProgramData\\McAfee\\Endpoint Security\\Logs",
-    "HayabusaRelativePath": "hayabusa-3.7.0-win-x86\\hayabusa-3.7.0-win-x86.exe",
+    "AVLogsPath":      "C:\\ProgramData\\McAfee\\Endpoint Security\\Logs",
+    "HayabusaRelativePath": "hayabusa-3.9.0-win-x86\\hayabusa-3.9.0-win-x86.exe",
     "SaveDestination":      "L:\\RSSI\\SI-ISOLES\\LOGS",
     "CompressionLevel":     "Optimal",
     "HayabusaProfile":      "standard",

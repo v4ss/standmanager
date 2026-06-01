@@ -68,7 +68,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $Script:AppName       = 'StandManager'
-$Script:AppVersion    = '2.1.0'
+$Script:AppVersion    = '2.2.0'
 $Script:ScriptRoot    = $PSScriptRoot
 $Script:ConfigPath    = Join-Path -Path $Script:ScriptRoot -ChildPath 'standmanager.config.json'
 $Script:LogPath       = Join-Path -Path $Script:ScriptRoot -ChildPath 'standmanager.log'
@@ -627,79 +627,120 @@ function Invoke-DifferentialAnalysis {
     $baselinePath = Join-Path -Path $computerPath -ChildPath 'baseline'
     Confirm-Directory -Path $baselinePath
 
+    # Chaque check produit une LISTE DE CLES UNIQUES (chaines), pas une collection d'objets.
+    # Cela evite les faux positifs sur :
+    #   - les processus multi-instances (csrss, svchost, ...) ;
+    #   - les colonnes nullables qui deviennent '' apres Import-Csv ;
+    #   - les connexions TCP client qui changent en permanence.
+    # On ne signale QUE les ajouts (clefs presentes dans le snapshot courant
+    # et absentes de la baseline).
     $checks = @(
         [PSCustomObject]@{
-            Name       = 'services'
-            FileName   = 'services-baseline.csv'
-            Collect    = { Get-Service | Select-Object Name, Status, StartType }
-            Properties = @('Name','StartType')
-            OutputFile = 'diff-services.txt'
-            Prompt     = "Aucune baseline pour les services. La creer maintenant ?"
+            DisplayName  = 'services'
+            BaselineFile = 'services.baseline'
+            OutputFile   = 'diff-services.txt'
+            Prompt       = "Aucune baseline pour les services. La creer maintenant ?"
+            AddedLabel   = 'Nouveaux services apparus depuis la baseline'
+            Collect      = {
+                @(Get-Service -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty Name |
+                    Sort-Object -Unique)
+            }
         },
         [PSCustomObject]@{
-            Name       = 'processus'
-            FileName   = 'process-baseline.csv'
-            Collect    = { Get-Process | Select-Object Name, Path }
-            Properties = @('Name','Path')
-            OutputFile = 'diff-processes.txt'
-            Prompt     = "Aucune baseline pour les processus. La creer maintenant ?"
+            DisplayName  = 'processus'
+            BaselineFile = 'processes.baseline'
+            OutputFile   = 'diff-processes.txt'
+            Prompt       = "Aucune baseline pour les processus. La creer maintenant ?"
+            AddedLabel   = 'Nouveaux processus apparus depuis la baseline'
+            Collect      = {
+                @(Get-Process -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty Name |
+                    Sort-Object -Unique)
+            }
         },
         [PSCustomObject]@{
-            Name       = 'reseau'
-            FileName   = 'network-baseline.csv'
-            Collect    = { Get-NetTCPConnection | Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, State }
-            Properties = @('LocalAddress','LocalPort','RemoteAddress','RemotePort')
-            OutputFile = 'diff-network.txt'
-            Prompt     = "Aucune baseline pour le reseau. La creer maintenant ?"
+            DisplayName  = 'ports en ecoute'
+            BaselineFile = 'listening-ports.baseline'
+            OutputFile   = 'diff-network.txt'
+            Prompt       = "Aucune baseline pour les ports en ecoute. La creer maintenant ?"
+            AddedLabel   = 'Nouveaux ports en ecoute depuis la baseline'
+            Collect      = {
+                @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+                    ForEach-Object { '{0}:{1}' -f $_.LocalAddress, $_.LocalPort } |
+                    Sort-Object -Unique)
+            }
         },
         [PSCustomObject]@{
-            Name       = 'taches planifiees'
-            FileName   = 'scheduled-baseline.csv'
-            Collect    = { Get-ScheduledTask | Select-Object TaskName, TaskPath, State }
-            Properties = @('TaskName','TaskPath')
-            OutputFile = 'diff-scheduled.txt'
-            Prompt     = "Aucune baseline pour les taches planifiees. La creer maintenant ?"
+            DisplayName  = 'taches planifiees'
+            BaselineFile = 'scheduled-tasks.baseline'
+            OutputFile   = 'diff-scheduled.txt'
+            Prompt       = "Aucune baseline pour les taches planifiees. La creer maintenant ?"
+            AddedLabel   = 'Nouvelles taches planifiees depuis la baseline'
+            Collect      = {
+                @(Get-ScheduledTask -ErrorAction SilentlyContinue |
+                    ForEach-Object { '{0}{1}' -f $_.TaskPath, $_.TaskName } |
+                    Sort-Object -Unique)
+            }
         }
     )
 
     foreach ($check in $checks) {
-        $baselineFile = Join-Path -Path $baselinePath -ChildPath $check.FileName
+        $baselineFile = Join-Path -Path $baselinePath -ChildPath $check.BaselineFile
         $createdNow = $false
 
         if (-not (Test-Path -LiteralPath $baselineFile)) {
             $shouldCreate = $CreateBaseline -or (Read-YesNoChoice -Message $check.Prompt -Default 'N')
             if (-not $shouldCreate) {
-                Write-Host "Baseline '$($check.Name)' non creee. Suivant." -ForegroundColor Yellow
+                Write-Host "Baseline '$($check.DisplayName)' non creee. Suivant." -ForegroundColor Yellow
                 continue
             }
-            & $check.Collect | Export-Csv -Path $baselineFile -NoTypeInformation -Encoding UTF8 -Force
-            Write-Host "Baseline creee : $baselineFile" -ForegroundColor Green
-            Write-StandLog "Baseline '$($check.Name)' creee : $baselineFile" -Level 'OK'
+            $items = @(& $check.Collect)
+            $items | Out-File -FilePath $baselineFile -Encoding UTF8 -Force
+            Write-Host ("Baseline creee : {0} ({1} entrees)" -f $baselineFile, $items.Count) -ForegroundColor Green
+            Write-StandLog "Baseline '$($check.DisplayName)' creee : $baselineFile ($($items.Count) entrees)" -Level 'OK'
             $createdNow = $true
         }
 
         if ($createdNow) {
-            Write-Host "Pas de diff pour '$($check.Name)' (baseline fraichement creee)." -ForegroundColor Cyan
+            Write-Host "Pas de diff pour '$($check.DisplayName)' (baseline fraichement creee)." -ForegroundColor Cyan
             continue
         }
 
         Write-Host ""
-        Write-Host ("--- Diff : {0} ---" -f $check.Name) -ForegroundColor Cyan
+        Write-Host ("--- Diff : {0} ---" -f $check.DisplayName) -ForegroundColor Cyan
 
-        $baseline = Import-Csv -LiteralPath $baselineFile
-        $current  = & $check.Collect
+        $baseline = @(Get-Content -LiteralPath $baselineFile -Encoding UTF8 -ErrorAction SilentlyContinue |
+            Where-Object { $_ -and $_.Trim() })
+        $current  = @(& $check.Collect)
         $outputFile = Join-Path -Path $computerPath -ChildPath $check.OutputFile
 
-        $diff = Compare-Object -ReferenceObject $baseline -DifferenceObject $current -Property $check.Properties
-        if (-not $diff) {
-            "Aucun changement detecte ($($check.Name)) - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" |
+        # Set-based lookup pour O(n) au lieu de O(n*m)
+        $baselineSet = New-Object 'System.Collections.Generic.HashSet[string]' (
+            [string[]]$baseline,
+            [System.StringComparer]::OrdinalIgnoreCase
+        )
+        $added = @($current | Where-Object { -not $baselineSet.Contains($_) })
+
+        if ($added.Count -eq 0) {
+            "Aucun ajout detecte ($($check.DisplayName)) - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" |
                 Out-File -FilePath $outputFile -Encoding UTF8 -Force
-            Write-Host "Aucune difference." -ForegroundColor Green
+            Write-Host "Aucun ajout." -ForegroundColor Green
         } else {
-            $diff | Format-Table -AutoSize | Out-String |
-                Out-File -FilePath $outputFile -Encoding UTF8 -Force
-            $diff | Format-Table -AutoSize | Out-Host
+            $header = @(
+                $check.AddedLabel,
+                "Detecte le : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+                "Baseline   : $baselineFile",
+                "Nombre     : $($added.Count)",
+                '',
+                '--------------------------------------'
+            )
+            ($header + $added) | Out-File -FilePath $outputFile -Encoding UTF8 -Force
+
+            Write-Host ("{0} nouvel(s) element(s) :" -f $added.Count) -ForegroundColor Yellow
+            $added | ForEach-Object { Write-Host "  + $_" -ForegroundColor Yellow }
             Write-Host "Diff enregistree : $outputFile" -ForegroundColor Green
+            Write-StandLog "Diff '$($check.DisplayName)' : $($added.Count) ajout(s)" -Level 'WARN'
         }
     }
 }
