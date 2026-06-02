@@ -68,7 +68,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $Script:AppName       = 'StandManager'
-$Script:AppVersion    = '2.2.0'
+$Script:AppVersion    = '2.2.1'
 $Script:ScriptRoot    = $PSScriptRoot
 $Script:ConfigPath    = Join-Path -Path $Script:ScriptRoot -ChildPath 'standmanager.config.json'
 $Script:LogPath       = Join-Path -Path $Script:ScriptRoot -ChildPath 'standmanager.log'
@@ -446,12 +446,12 @@ function Invoke-HayabusaAnalysis {
         return
     }
 
-    $profile = if ($Script:Config.HayabusaProfile) { $Script:Config.HayabusaProfile } else { 'standard' }
-    $output  = Join-Path -Path $ComputerPath -ChildPath ("Analyse_{0}_{1}.csv" -f $SIName, $ComputerName)
+    $hayProfile = if ($Script:Config.HayabusaProfile) { $Script:Config.HayabusaProfile } else { 'standard' }
+    $output     = Join-Path -Path $ComputerPath -ChildPath ("Analyse_{0}_{1}.csv" -f $SIName, $ComputerName)
 
-    Write-Host "Analyse Hayabusa en cours (profil $profile)..." -ForegroundColor Cyan
+    Write-Host "Analyse Hayabusa en cours (profil $hayProfile)..." -ForegroundColor Cyan
     try {
-        & $hayabusa csv-timeline -d $ComputerPath -o $output --profile $profile -q -w
+        & $hayabusa csv-timeline -d $ComputerPath -o $output --profile $hayProfile -q -w
         if (Test-Path -LiteralPath $output) {
             Write-Host "Analyse terminee. Rapport : $output" -ForegroundColor Green
             Write-StandLog "Analyse Hayabusa OK : $output" -Level 'OK'
@@ -1172,13 +1172,15 @@ function Get-HayabusaSummary {
     if (-not (Test-Path -LiteralPath $CsvPath)) { return $summary }
  
     try {
-        $rows = Import-Csv -LiteralPath $CsvPath
+        # @() garantit un tableau meme pour un CSV a 0 ou 1 ligne
+        # (sinon $rows.Count plante sous Set-StrictMode).
+        $rows = @(Import-Csv -LiteralPath $CsvPath)
     } catch {
         Write-StandLog "Lecture Hayabusa CSV echouee ($CsvPath) : $_" -Level 'WARN'
         return $summary
     }
- 
-    if (-not $rows -or $rows.Count -eq 0) { return $summary }
+
+    if ($rows.Count -eq 0) { return $summary }
  
     $ruleCounts = @{}
     $maxTs = $null
@@ -1357,8 +1359,8 @@ function New-DashboardHtml {
     $coverage        = if ($totalPostes -gt 0) { [math]::Round(($freshAnalysis / $totalPostes) * 100, 0) } else { 0 }
     $forgotten       = @($Postes | Where-Object { $_.AgeDays -gt 90 })
  
-    $siGroups = $Postes | Group-Object SI | Sort-Object Name
- 
+    $siGroups = @($Postes | Group-Object SI | Sort-Object Name)
+
     # ---------- Top regles globales ----------
     $ruleAgg = @{}
     foreach ($p in $Postes) {
@@ -1377,9 +1379,9 @@ function New-DashboardHtml {
         }
     }
     $levelOrder = @{ 'crit'=0; 'critical'=0; 'high'=1; 'med'=2; 'medium'=2; 'low'=3; 'info'=4; 'informational'=4 }
-    $topRules = $ruleAgg.Values |
+    $topRules = @($ruleAgg.Values |
         Sort-Object @{Expression={ if ($levelOrder.ContainsKey($_.Level)) { $levelOrder[$_.Level] } else { 5 } }}, @{Expression={ $_.Count }; Descending=$true} |
-        Select-Object -First 20
+        Select-Object -First 20)
  
     # ---------- HTML : CSS ----------
     $css = @'
@@ -1807,22 +1809,39 @@ function Invoke-WeatherDashboard {
  
     $siDirs = @(Get-ChildItem -LiteralPath $dest -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -notmatch '^_' })
- 
+
     if ($siDirs.Count -eq 0) {
         Write-Host "Aucun SI trouve dans $dest." -ForegroundColor Yellow
         return
     }
- 
-    $totalScanned = 0
+
+    # On etablit d'abord la liste complete des postes a traiter, afin de calculer
+    # un pourcentage de progression fiable quel que soit le nombre de postes par SI.
+    $pairs = New-Object System.Collections.Generic.List[object]
     foreach ($siDir in $siDirs) {
         $posteDirs = @(Get-ChildItem -LiteralPath $siDir.FullName -Directory -ErrorAction SilentlyContinue)
         foreach ($posteDir in $posteDirs) {
-            $totalScanned++
-            Write-Progress -Activity 'Agregation dashboard' `
-                -Status "$($siDir.Name) / $($posteDir.Name)" `
-                -PercentComplete (($totalScanned / [math]::Max(1, ($siDirs.Count * 10))) * 100)
- 
-            $latestDir = Join-Path -Path $posteDir.FullName -ChildPath 'latest'
+            $pairs.Add([PSCustomObject]@{ SiDir = $siDir; PosteDir = $posteDir })
+        }
+    }
+
+    $totalToScan = $pairs.Count
+    if ($totalToScan -eq 0) {
+        Write-Host "Aucun poste n'a ete trouve sous $dest." -ForegroundColor Yellow
+        return
+    }
+
+    $scanned = 0
+    foreach ($pair in $pairs) {
+        $scanned++
+        $siDir = $pair.SiDir
+        $posteDir = $pair.PosteDir
+        $pct = [math]::Min(100, [int](($scanned / $totalToScan) * 100))
+        Write-Progress -Activity 'Agregation dashboard' `
+            -Status "$($siDir.Name) / $($posteDir.Name) ($scanned/$totalToScan)" `
+            -PercentComplete $pct
+
+        $latestDir = Join-Path -Path $posteDir.FullName -ChildPath 'latest'
             $hayCsv    = Join-Path -Path $latestDir -ChildPath 'hayabusa.csv'
             $auditJson = Join-Path -Path $latestDir -ChildPath 'system_audit.json'
             $lastExp   = Join-Path -Path $latestDir -ChildPath 'last_export.txt'
@@ -1861,7 +1880,6 @@ function Invoke-WeatherDashboard {
                 HasAnalysis  = $hasAnalysis
                 AnalyseFile  = if ($hasAnalysis) { $hayCsv } else { $null }
             })
-        }
     }
     Write-Progress -Activity 'Agregation dashboard' -Completed
  

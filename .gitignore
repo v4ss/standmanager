@@ -1,4 +1,6 @@
 StandManager-*
 hayabusa*
-changelog.md
+CHANGELOG.md
 releases
+tests/
+*.Tests.ps1
