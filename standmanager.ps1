@@ -16,7 +16,8 @@
       - l'archivage des donnees collectees et leur depot sur un partage reseau.
 
 .PARAMETER Action
-    Action a executer directement (Triage, Restore, Export, Save, Dashboard, Quit).
+    Action a executer directement (Triage, Restore, Export, Hayabusa, Save, Dashboard, Quit).
+    Hayabusa lance une analyse de rattrapage sur le repertoire d'un poste deja exporte.
     Si omis et que -Interactive est absent, le menu interactif est lance par defaut.
 
 .PARAMETER Interactive
@@ -48,12 +49,15 @@
     .\standmanager.ps1 -Action Save -SIName SI03
 
 .EXAMPLE
+    .\standmanager.ps1 -Action Hayabusa -SIName SI03 -ComputerName LAP-001
+
+.EXAMPLE
     .\standmanager.ps1 -Action Dashboard
 #>
 
 [CmdletBinding()]
 param (
-    [ValidateSet('Triage','Restore','Export','Save','Dashboard','Quit')]
+    [ValidateSet('Triage','Restore','Export','Hayabusa','Save','Dashboard','Quit')]
     [string]$Action,
 
     [switch]$Interactive,
@@ -68,7 +72,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $Script:AppName       = 'StandManager'
-$Script:AppVersion    = '2.2.1'
+$Script:AppVersion    = '2.3.0'
 $Script:ScriptRoot    = $PSScriptRoot
 $Script:ConfigPath    = Join-Path -Path $Script:ScriptRoot -ChildPath 'standmanager.config.json'
 $Script:LogPath       = Join-Path -Path $Script:ScriptRoot -ChildPath 'standmanager.log'
@@ -432,6 +436,15 @@ function Export-WindowsEventLogs {
     }
 }
 
+function Get-AnalysisOutputPath {
+    param (
+        [Parameter(Mandatory)][string]$ComputerPath,
+        [Parameter(Mandatory)][string]$SIName,
+        [Parameter(Mandatory)][string]$ComputerName
+    )
+    return Join-Path -Path $ComputerPath -ChildPath ("Analyse_{0}_{1}.csv" -f $SIName, $ComputerName)
+}
+
 function Invoke-HayabusaAnalysis {
     param (
         [Parameter(Mandatory)][string]$ComputerPath,
@@ -447,7 +460,7 @@ function Invoke-HayabusaAnalysis {
     }
 
     $hayProfile = if ($Script:Config.HayabusaProfile) { $Script:Config.HayabusaProfile } else { 'standard' }
-    $output     = Join-Path -Path $ComputerPath -ChildPath ("Analyse_{0}_{1}.csv" -f $SIName, $ComputerName)
+    $output     = Get-AnalysisOutputPath -ComputerPath $ComputerPath -SIName $SIName -ComputerName $ComputerName
 
     Write-Host "Analyse Hayabusa en cours (profil $hayProfile)..." -ForegroundColor Cyan
     try {
@@ -462,6 +475,61 @@ function Invoke-HayabusaAnalysis {
         Write-Host "Erreur Hayabusa : $_" -ForegroundColor Red
         Write-StandLog "Erreur Hayabusa : $_" -Level 'ERROR'
     }
+}
+
+function Invoke-StandaloneAnalysis {
+    <#
+        Analyse Hayabusa de rattrapage : relance une analyse sur le repertoire
+        d'un poste deja exporte (cas ou l'on a repondu "non" a l'analyse lors
+        de l'export). N'exporte aucun journal et ne cree pas de repertoire.
+    #>
+    param (
+        [Parameter(Mandatory)][string]$BasePath
+    )
+
+    Write-Banner -Title 'ANALYSE HAYABUSA D''UN POSTE (RATTRAPAGE)'
+
+    # Inutile de demander quoi que ce soit si Hayabusa n'est pas disponible.
+    $hayabusa = Get-HayabusaPath
+    if (-not $hayabusa) {
+        Write-Host "Hayabusa introuvable ($($Script:Config.HayabusaRelativePath))." -ForegroundColor Red
+        Write-Host "Placez Hayabusa a cote du script ou corrigez HayabusaRelativePath dans la config." -ForegroundColor Yellow
+        Write-StandLog "Analyse rattrapage : Hayabusa introuvable." -Level 'WARN'
+        return
+    }
+
+    $ctx = Get-OperationContext -SIName $SIName -ComputerName $ComputerName
+    $computerPath = Join-Path -Path (Join-Path -Path $BasePath -ChildPath $ctx.SIName) -ChildPath $ctx.ComputerName
+
+    if (-not (Test-Path -LiteralPath $computerPath -PathType Container)) {
+        Write-Host "Repertoire du poste introuvable : $computerPath" -ForegroundColor Red
+        Write-Host "Verifiez le nom du SI et du poste, ou lancez d'abord un export." -ForegroundColor Yellow
+        Write-StandLog "Analyse rattrapage : $computerPath introuvable." -Level 'WARN'
+        return
+    }
+
+    $evtxCount = @(Get-ChildItem -LiteralPath $computerPath -Filter '*.evtx' -File -Recurse -ErrorAction SilentlyContinue).Count
+    if ($evtxCount -eq 0) {
+        Write-Host "Aucun fichier EVTX a analyser dans $computerPath." -ForegroundColor Yellow
+        Write-Host "Lancez d'abord l'export des journaux." -ForegroundColor Yellow
+        Write-StandLog "Analyse rattrapage : aucun EVTX dans $computerPath." -Level 'WARN'
+        return
+    }
+    Write-Host "$evtxCount fichier(s) EVTX detecte(s) dans $computerPath." -ForegroundColor Cyan
+
+    # Si un rapport existe deja, demander avant d'ecraser (sinon Hayabusa
+    # bloquerait sur une invite d'ecrasement en mode non interactif).
+    $existing = Get-AnalysisOutputPath -ComputerPath $computerPath -SIName $ctx.SIName -ComputerName $ctx.ComputerName
+    if (Test-Path -LiteralPath $existing) {
+        Write-Host "Un rapport d'analyse existe deja : $existing" -ForegroundColor Yellow
+        if (-not (Read-YesNoChoice -Message 'Le remplacer ?' -Default 'N')) {
+            Write-Host 'Analyse annulee.' -ForegroundColor Yellow
+            return
+        }
+        Remove-Item -LiteralPath $existing -Force -ErrorAction SilentlyContinue
+    }
+
+    Invoke-HayabusaAnalysis -ComputerPath $computerPath -SIName $ctx.SIName -ComputerName $ctx.ComputerName
 }
 
 # ============================================================================
@@ -1935,16 +2003,18 @@ function Show-MainMenu {
     Write-Host '   (admin requis)' -ForegroundColor Red
     Write-Host ' 3. Export EVTX + AV + Audit + Analyse differentielle' -NoNewline
     Write-Host '   (admin requis)' -ForegroundColor Red
-    Write-Host ' 4. Sauvegarde des logs sur le reseau'
-    Write-Host ' 5. Dashboard meteo SSI' -NoNewline
+    Write-Host ' 4. Analyse Hayabusa d''un poste (rattrapage)' -NoNewline
+    Write-Host '   (aucun privilege requis)' -ForegroundColor DarkGray
+    Write-Host ' 5. Sauvegarde des logs sur le reseau'
+    Write-Host ' 6. Dashboard meteo SSI' -NoNewline
     Write-Host '   (lit le partage reseau, aucun privilege requis)' -ForegroundColor DarkGray
-    Write-Host ' 6. Quitter'
+    Write-Host ' 7. Quitter'
     Write-Host $bar -ForegroundColor Yellow
- 
+
     while ($true) {
-        $choice = Read-Host 'Que voulez-vous faire ? (1-6)'
-        if ($choice -in '1','2','3','4','5','6') { return $choice }
-        Write-Host 'Choix invalide. Saisissez un nombre entre 1 et 6.' -ForegroundColor Yellow
+        $choice = Read-Host 'Que voulez-vous faire ? (1-7)'
+        if ($choice -in '1','2','3','4','5','6','7') { return $choice }
+        Write-Host 'Choix invalide. Saisissez un nombre entre 1 et 7.' -ForegroundColor Yellow
     }
 }
  
@@ -1969,13 +2039,16 @@ function Invoke-MenuChoice {
             Invoke-DifferentialAnalysis -BasePath $BasePath -SIName $ctx.SIName -ComputerName $ctx.ComputerName
         }
         '4' {
+            Invoke-StandaloneAnalysis -BasePath $BasePath
+        }
+        '5' {
             $ctx = Get-SaveOperationContext -SIName $SIName
             Invoke-NetworkBackup -SIName $ctx.SIName
         }
-        '5' {
+        '6' {
             Invoke-WeatherDashboard
         }
-        '6' {
+        '7' {
             Write-Host 'Au revoir.' -ForegroundColor Cyan
         }
         default {
@@ -1990,9 +2063,10 @@ function Get-ActionChoice {
         'Triage'    { '1' }
         'Restore'   { '2' }
         'Export'    { '3' }
-        'Save'      { '4' }
-        'Dashboard' { '5' }
-        'Quit'      { '6' }
+        'Hayabusa'  { '4' }
+        'Save'      { '5' }
+        'Dashboard' { '6' }
+        'Quit'      { '7' }
         default     { $null }
     }
 }
@@ -2016,7 +2090,7 @@ try {
                 Write-Host "Erreur : $_" -ForegroundColor Red
             }
  
-            if ($menu -eq '6') {
+            if ($menu -eq '7') {
                 $running = $false
             } else {
                 Write-Host ''

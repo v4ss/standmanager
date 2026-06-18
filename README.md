@@ -16,6 +16,9 @@ pour **postes Windows isolés**. Conçu pour être exécuté **depuis une clé U
   - empreinte SHA-256 par fichier ;
   - rapport texte horodaté + manifest CSV ;
   - analyse optionnelle via [Hayabusa](https://github.com/Yamato-Security/hayabusa/releases) (`csv-timeline`).
+- Analyse Hayabusa de rattrapage : relance l'analyse sur le répertoire d'un
+  poste déjà exporté, sans ré-exporter les journaux (utile si l'on a répondu
+  « non » à l'analyse pendant l'export).
 - Copie récursive des logs Anti-virus.
 - Audit système : OS, pare-feu, BitLocker, antivirus, correctifs, membres
   Administrateurs, état de redémarrage en attente — sortie JSON + résumé texte.
@@ -67,6 +70,10 @@ pour **postes Windows isolés**. Conçu pour être exécuté **depuis une clé U
 # Export complet avec analyse forcée
 .\standmanager.ps1 -Action Export -SIName SI03 -ComputerName LAP-001 -Analyze
  
+# Analyse Hayabusa de rattrapage sur un poste déjà exporté
+# (cas où l'on a répondu "non" à l'analyse pendant l'export)
+.\standmanager.ps1 -Action Hayabusa -SIName SI03 -ComputerName LAP-001
+ 
 # Sauvegarde réseau
 .\standmanager.ps1 -Action Save -SIName SI03
  
@@ -81,7 +88,7 @@ pour **postes Windows isolés**. Conçu pour être exécuté **depuis une clé U
  
 | Paramètre         | Description                                                  |
 |-------------------|--------------------------------------------------------------|
-| `-Action`         | `Triage`, `Restore`, `Export`, `Save`, `Dashboard`, `Quit`   |
+| `-Action`         | `Triage`, `Restore`, `Export`, `Hayabusa`, `Save`, `Dashboard`, `Quit` |
 | `-Interactive`    | Force le menu interactif                                     |
 | `-Analyze`        | Force l'analyse Hayabusa après export                        |
 | `-NoAnalyze`      | Désactive l'analyse Hayabusa après export                    |
