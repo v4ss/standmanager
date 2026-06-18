@@ -41,11 +41,11 @@ pour **postes Windows isolés**. Conçu pour être exécuté **depuis une clé U
 ## Installation
 
 1. [Télécharger la dernière version de l'outil](https://github.com/v4ss/standmanager/releases/latest)
-1. Copier `standmanager.ps1` et `standmanager.config.json` à la racine de la
+2. Copier `standmanager.ps1` et `standmanager.config.json` à la racine de la
    clé USB ou du dossier de travail.
-2. (Optionnel) Déposer Hayabusa dans le dossier indiqué par
+3. (Optionnel) Déposer Hayabusa dans le dossier indiqué par
    `HayabusaRelativePath`.
-3. Ajuster `standmanager.config.json` selon votre environnement.
+4. Ajuster `standmanager.config.json` selon votre environnement.
 
 ## Utilisation
 
