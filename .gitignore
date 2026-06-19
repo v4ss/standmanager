@@ -1,7 +1,4 @@
-StandManager-*
 hayabusa*
-CHANGELOG.md
-releases
 tests/
 *.Tests.ps1
 HANDOVER.md
