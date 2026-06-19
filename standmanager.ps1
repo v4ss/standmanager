@@ -72,7 +72,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $Script:AppName       = 'StandManager'
-$Script:AppVersion    = '2.3.0'
+$Script:AppVersion    = '2.4.0'
 $Script:ScriptRoot    = $PSScriptRoot
 $Script:ConfigPath    = Join-Path -Path $Script:ScriptRoot -ChildPath 'standmanager.config.json'
 $Script:LogPath       = Join-Path -Path $Script:ScriptRoot -ChildPath 'standmanager.log'
@@ -179,6 +179,13 @@ function Get-SafeName {
     $clean = $Name
     foreach ($c in $invalid) { $clean = $clean.Replace([string]$c, '_') }
     return $clean.Trim('_')
+}
+
+function Format-DisplayDateTime {
+    # Affichage francais jj/MM/aaaa HH:mm:ss, independant de la culture de la
+    # machine (evite l'affichage en MM/jj/aaaa sur les postes en culture en-US).
+    param ([Parameter(Mandatory)][DateTime]$Value)
+    return $Value.ToString('dd/MM/yyyy HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
 function Write-Banner {
@@ -354,7 +361,7 @@ function Export-WindowsEventLogs {
 
     $lastExport = Get-LastExportTimestamp -ComputerPath $computerPath
     if ($lastExport) {
-        Write-Host "Derniere exportation detectee : $lastExport. Export incremental." -ForegroundColor Cyan
+        Write-Host "Derniere exportation detectee : $(Format-DisplayDateTime $lastExport). Export incremental." -ForegroundColor Cyan
     } else {
         Write-Host "Aucune exportation precedente. Export complet." -ForegroundColor Cyan
     }
@@ -408,7 +415,7 @@ function Export-WindowsEventLogs {
         "Hote          : $env:COMPUTERNAME",
         "SI            : $SIName",
         "Poste         : $ComputerName",
-        "Export depuis : $(if ($lastExport) { $lastExport } else { 'export complet' })",
+        "Export depuis : $(if ($lastExport) { Format-DisplayDateTime $lastExport } else { 'export complet' })",
         ""
         "Fichiers exportes (chemin : SHA-256) :"
     )
